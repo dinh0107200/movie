@@ -269,13 +269,25 @@ function HlsVideo({ src, title }: { src: string; title: string }) {
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const hlsRef = useRef<Hls | null>(null)
 
+  const [resumeTime, setResumeTime] = useState<number | null>(null)
+  const [showResume, setShowResume] = useState(false)
+
   useEffect(() => {
     const video = videoRef.current
     if (!video) return
 
+    // lấy lịch sử xem
+    const key = `video-progress:${src}`
+    try {
+      const saved = JSON.parse(localStorage.getItem(key) || '{}')
+      if (saved?.time && saved.time > 30) {
+        setResumeTime(saved.time)
+        setShowResume(true)
+      }
+    } catch {}
+
     if (video.canPlayType('application/vnd.apple.mpegurl')) {
       video.src = src
-      video.play().catch(() => { })
       return
     }
 
@@ -284,38 +296,74 @@ function HlsVideo({ src, title }: { src: string; title: string }) {
       hlsRef.current = hls
       hls.attachMedia(video)
       hls.on(Hls.Events.MEDIA_ATTACHED, () => hls.loadSource(src))
-      hls.on(Hls.Events.ERROR, (_, data) => {
-        if (data?.fatal) {
-          switch (data.type) {
-            case Hls.ErrorTypes.NETWORK_ERROR:
-              hls.startLoad(); break
-            case Hls.ErrorTypes.MEDIA_ERROR:
-              hls.recoverMediaError(); break
-            default:
-              hls.destroy()
-          }
-        }
-      })
     }
 
     return () => {
-      try { hlsRef.current?.destroy() } catch { }
+      try { hlsRef.current?.destroy() } catch {}
       if (video) video.removeAttribute('src')
     }
   }, [src])
 
+  const handleTimeUpdate = () => {
+    const video = videoRef.current
+    if (!video) return
+    try {
+      localStorage.setItem(`video-progress:${src}`, JSON.stringify({ time: video.currentTime }))
+    } catch {}
+  }
+
+  const handleResume = () => {
+    if (videoRef.current && resumeTime) {
+      videoRef.current.currentTime = resumeTime
+      videoRef.current.play().catch(() => {})
+    }
+    setShowResume(false)
+  }
+  const handleStartOver = () => {
+    if (videoRef.current) {
+      videoRef.current.currentTime = 0
+      videoRef.current.play().catch(() => {})
+    }
+    setShowResume(false)
+  }
+
   return (
-    <video
-      ref={videoRef}
-      className="h-full w-full"
-      controls
-      playsInline
-      preload="auto"
-      poster=""
-      aria-label={title}
-    />
+    <div className="relative w-full h-full">
+      <video
+        ref={videoRef}
+        className="h-full w-full"
+        controls
+        playsInline 
+        autoPlay
+        preload="auto"
+        onTimeUpdate={handleTimeUpdate}
+        aria-label={title}
+      />
+      {showResume && (
+        <div className="absolute inset-0 bg-black/70 flex items-center justify-center z-10">
+          <div className="bg-white text-black rounded-xl p-6 w-80 text-center">
+            <h2 className="text-lg font-semibold mb-4">Bạn có muốn xem tiếp?</h2>
+            <div className="flex justify-center gap-4">
+              <button
+                onClick={handleResume}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg"
+              >
+                Xem tiếp
+              </button>
+              <button
+                onClick={handleStartOver}
+                className="px-4 py-2 bg-gray-400 text-white rounded-lg"
+              >
+                Xem lại từ đầu
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
+
 
 function withAutoplay(u: string) {
   try {
